@@ -209,16 +209,15 @@ struct ChatRow: View {
 struct ChatDetailView: View {
     let chat: Chat
     let appBackground: Image?
-    @Environment(\.dismiss) private var dismiss
+    @State private var heroCard: CardInfo?
+    @State private var heroRect: CGRect = .zero
 
     var body: some View {
         ZStack {
             if let appBackground { appBackground.resizable().scaledToFill().ignoresSafeArea() }
             else { Theme.bg.ignoresSafeArea() }
-            Color.black.opacity(0.58).ignoresSafeArea()
 
             VStack(spacing: 0) {
-                header
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("Today").font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.textMuted).frame(maxWidth: .infinity).padding(.top, 18)
@@ -227,35 +226,31 @@ struct ChatDetailView: View {
                         }
                     }.padding(.horizontal, 16)
                 }
+                .scrollDisabled(heroCard != nil)
                 inputBar
             }
-        }
-        .toolbar(.hidden, for: .navigationBar)
-        .navigationBarBackButtonHidden(true)
-    }
 
-    // Back (left) · name centered · profile photo (right, opens the profile).
-    private var header: some View {
-        ZStack {
-            VStack(spacing: 1) {
-                Text(LK(chat.name)).font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.textPrimary)
-                Text(chat.isOnline ? "online" : "last seen recently").font(.system(size: 12)).foregroundStyle(Theme.online)
-            }
-            HStack {
-                Button { dismiss() } label: {
-                    HStack(spacing: 2) {
-                        Image(systemName: "chevron.left").font(.system(size: 18, weight: .semibold))
-                        Text("Back").font(.system(size: 17))
-                    }.foregroundStyle(Theme.accent)
+            if let card = heroCard {
+                HeroExpandView(card: card, sourceRect: heroRect) {
+                    heroCard = nil
                 }
-                Spacer()
-                NavigationLink { PersonProfileView(chat: chat) } label: {
-                    profileAvatar
-                }
+                .zIndex(50)
             }
         }
-        .padding(.horizontal, 14).padding(.vertical, 9)
-        .background(.ultraThinMaterial)
+        .environment(\.dealPresentation, DealPresentation(
+            activeID: heroCard?.id,
+            present: { c, rect in
+                heroRect = rect
+                heroCard = c
+            }
+        ))
+        .navigationTitle(LK(chat.name))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink { PersonProfileView(chat: chat) } label: { profileAvatar }
+            }
+        }
     }
 
     private var profileAvatar: some View {
@@ -313,6 +308,66 @@ struct MessageBubble: View { let text: String; let incoming: Bool; var body: som
 // Vertical product tile (WB/Vinted shape): the photo fills the tall tile
 // (crop-to-fill), badge + title + price overlaid. The system renders this
 // from photo+title+price — the seller never designs an infographic.
+// The card's visual face (no interaction) — reused for the small card and its
+// expanded hero twin.
+struct CardFace: View {
+    var title: String = "Nike Air Max 1"
+    var price: String = "€120"
+    var badge: String? = "top"
+    var width: CGFloat = 230
+    var image: Image? = nil
+    var placeholder: Bool = false
+    private var height: CGFloat { width * 1.34 }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Group {
+                if let image { image.resizable().scaledToFill() }
+                else if placeholder {
+                    ZStack { Theme.surfaceStrong; Image(systemName: "photo").font(.system(size: 32)).foregroundStyle(Theme.textMuted) }
+                } else { Image("Sneaker").resizable().scaledToFill() }
+            }
+            .frame(width: width, height: height)
+            .clipped()
+
+            LinearGradient(colors: [.clear, .clear, .black.opacity(0.6)], startPoint: .top, endPoint: .bottom)
+
+            if let badge {
+                Text(LK(badge)).font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(Theme.coral, in: Capsule()).padding(10)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Spacer()
+                Text(LK(title)).font(.system(size: 18, weight: .bold)).foregroundStyle(.white).lineLimit(2)
+                Text(price).font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(.white)
+            }
+            .padding(14)
+        }
+        .frame(width: width, height: height)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Theme.stroke, lineWidth: 0.6) }
+    }
+}
+
+// Deal presentation is coordinated by the host view so a tapped card can expand
+// (hero morph) over the whole screen. Provided via environment.
+struct CardInfo: Identifiable, Equatable { let id: String; let title: String; let price: String }
+struct DealPresentation {
+    let activeID: String?
+    // Present with the card's exact on-screen frame (global coords).
+    let present: (CardInfo, CGRect) -> Void
+}
+private struct DealPresentationKey: EnvironmentKey { static let defaultValue: DealPresentation? = nil }
+extension EnvironmentValues {
+    var dealPresentation: DealPresentation? {
+        get { self[DealPresentationKey.self] }
+        set { self[DealPresentationKey.self] = newValue }
+    }
+}
+
+// Tappable card — tapping asks the host to expand it into the deal.
 struct ProductCard: View {
     var title: String = "Nike Air Max 1"
     var price: String = "€120"
@@ -321,59 +376,23 @@ struct ProductCard: View {
     var image: Image? = nil
     var placeholder: Bool = false
     var interactive: Bool = true
-    @State private var showDeal = false
-    private var height: CGFloat { width * 1.34 }
+    @Environment(\.dealPresentation) private var deal
+    @State private var frame: CGRect = .zero
+    private var isActive: Bool { interactive && deal?.activeID == title }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            Group {
-                if let image {
-                    image.resizable().scaledToFill()
-                } else if placeholder {
-                    ZStack {
-                        Theme.surfaceStrong
-                        Image(systemName: "photo").font(.system(size: 32)).foregroundStyle(Theme.textMuted)
-                    }
-                } else {
-                    Image("Sneaker").resizable().scaledToFill()
-                }
+        CardFace(title: title, price: price, badge: badge, width: width, image: image, placeholder: placeholder)
+            // Hidden while its expanded twin is on screen; toggled without animation.
+            .opacity(isActive ? 0 : 1)
+            .animation(nil, value: isActive)
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
+            .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel("\(title), \(price)")
+            .onTapGesture {
+                if interactive, let deal { deal.present(CardInfo(id: title, title: title, price: price), frame) }
             }
-            .frame(width: width, height: height)
-            .clipped()
-
-            LinearGradient(colors: [.clear, .clear, .black.opacity(0.6)],
-                           startPoint: .top, endPoint: .bottom)
-
-            if let badge {
-                Text(LK(badge))
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Theme.coral, in: Capsule())
-                    .padding(10)
-            }
-
-            VStack(alignment: .leading, spacing: 3) {
-                Spacer()
-                Text(LK(title))
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(.white)
-                    .lineLimit(2)
-                Text(price)
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-            }
-            .padding(14)
-        }
-        .frame(width: width, height: height)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Theme.stroke, lineWidth: 0.6)
-        }
-        .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .onTapGesture { if interactive { showDeal = true } }
-        .sheet(isPresented: $showDeal) { CardDealView(title: title, price: price, image: image) }
     }
 }
 
@@ -465,58 +484,98 @@ struct CreateCardView: View {
 
 // The deal: Buy (at the seller's price) or offer your own. Both are one deal
 // with a different starting price; a decision opens a chat. Payment is a demo.
-struct CardDealView: View {
-    let title: String
-    let price: String
-    let image: Image?
-    @Environment(\.dismiss) private var dismiss
+// Expanded deal — one card grows from its source position and contracts back
+// into that same position. There is no modal backdrop or second card surface.
+struct HeroExpandView: View {
+    let card: CardInfo
+    let sourceRect: CGRect
+    let onClose: () -> Void
+    @State private var expanded = false
+    @State private var slotRect: CGRect = .zero
     @State private var showPay = false
     @State private var offering = false
     @State private var offer = ""
     @State private var result: String?
 
+    private var screenW: CGFloat { UIScreen.main.bounds.width }
+    private var targetW: CGFloat { min(screenW - 96, 300) }
+    private var targetH: CGFloat { targetW * 1.34 }
+    private var startScale: CGFloat { sourceRect.width > 0 ? sourceRect.width / targetW : 0.6 }
+    // Where the card and details naturally sit once expanded.
+    private var cardTarget: CGPoint {
+        slotRect == .zero ? CGPoint(x: screenW / 2, y: sourceRect.midY) : CGPoint(x: slotRect.midX, y: slotRect.midY)
+    }
+
     var body: some View {
         ZStack {
-            Theme.bg.ignoresSafeArea()
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 18) {
-                    ProductCard(title: title, price: price, badge: "top", width: 230, image: image, interactive: false)
-                        .padding(.top, 8)
+            // Scrim fades with the same motion — dark enough that the details
+            // below the card stay readable over the chat.
+            Color.black.opacity(expanded ? 0.92 : 0)
+                .ignoresSafeArea()
+                .onTapGesture { close() }
 
-                    if let result {
-                        VStack(spacing: 12) {
-                            Image(systemName: "checkmark.circle.fill").font(.system(size: 48)).foregroundStyle(Theme.online)
-                            Text(LK(result)).font(.system(size: 20, weight: .bold)).foregroundStyle(Theme.textPrimary)
-                            Text("No real money is charged").font(.system(size: 13)).foregroundStyle(Theme.textMuted)
-                        }.padding(.top, 8)
-                    } else if offering {
-                        VStack(spacing: 12) {
-                            TextField("Your price", text: $offer)
-                                .keyboardType(.numberPad).font(.system(size: 18)).foregroundStyle(Theme.textPrimary).tint(Theme.accent)
-                                .padding(.horizontal, 14).frame(height: 52)
-                                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            primary("Send offer") { withAnimation { result = "Offer sent" } }
-                                .disabled(offer.isEmpty).opacity(offer.isEmpty ? 0.5 : 1)
-                        }
-                    } else {
-                        VStack(spacing: 12) {
-                            primary("Buy") { showPay = true }
-                            secondary("Offer your price") { withAnimation { offering = true } }
-                        }
-                    }
-                }.padding(20)
+            // Layout skeleton: a placeholder reserves the expanded card's slot,
+            // details sit beneath it. We measure the slot and fly the real card
+            // into it, so positioning is automatic.
+            VStack(spacing: 16) {
+                Color.clear
+                    .frame(width: targetW, height: targetH)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { slotRect = $0 }
+                details
+                    .frame(width: targetW)
+                    .opacity(expanded ? 1 : 0)
+                    .offset(y: expanded ? 0 : 14)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.top, 40)
+
+            // The single card — one continuous scale + translate.
+            CardFace(title: card.title, price: card.price, badge: "top", width: targetW)
+                .scaleEffect(expanded ? 1 : startScale, anchor: .center)
+                .position(expanded ? cardTarget : CGPoint(x: sourceRect.midX, y: sourceRect.midY))
+                .allowsHitTesting(false)
         }
-        .safeAreaInset(edge: .top) {
-            HStack {
-                Button { dismiss() } label: { Text("Cancel").font(.system(size: 17)).foregroundStyle(Theme.accent) }
-                Spacer()
-            }.padding(.horizontal, 16).padding(.vertical, 10).background(.ultraThinMaterial)
+        .ignoresSafeArea()
+        .onChange(of: slotRect) { _, r in
+            if r != .zero && !expanded { withAnimation(.spring(response: 0.44, dampingFraction: 0.82)) { expanded = true } }
         }
         .sheet(isPresented: $showPay) {
-            DemoPaymentView(price: price) { withAnimation { result = "Paid" } }
+            DemoPaymentView(price: card.price) { withAnimation { result = "Paid" } }
         }
-        .preferredColorScheme(.dark)
+    }
+
+    private func close() {
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.86)) { expanded = false }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) { onClose() }
+    }
+
+    @ViewBuilder private var details: some View {
+        VStack(spacing: 12) {
+            if let result {
+                VStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill").font(.system(size: 40)).foregroundStyle(Theme.online)
+                    Text(LK(result)).font(.system(size: 19, weight: .bold)).foregroundStyle(.white)
+                    Text("No real money is charged").font(.system(size: 12)).foregroundStyle(Theme.textMuted)
+                }.frame(maxWidth: .infinity)
+            } else if offering {
+                HStack(spacing: 6) {
+                    Text("€").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white)
+                    TextField("Your price", text: $offer).keyboardType(.numberPad)
+                        .font(.system(size: 18, weight: .semibold)).foregroundStyle(.white).tint(Theme.accent)
+                }
+                .padding(.horizontal, 14).frame(height: 52)
+                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                primary("Send offer") { withAnimation { result = "Offer sent" } }
+                    .disabled(offer.isEmpty).opacity(offer.isEmpty ? 0.5 : 1)
+            } else {
+                Text("Lightly worn, great condition. Pickup or delivery.")
+                    .font(.system(size: 14)).foregroundStyle(Theme.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                primary("Buy") { showPay = true }
+                secondary("Offer your price") { withAnimation { offering = true } }
+            }
+        }
     }
 
     private func primary(_ text: LocalizedStringKey, action: @escaping () -> Void) -> some View {
@@ -528,7 +587,7 @@ struct CardDealView: View {
     }
     private func secondary(_ text: LocalizedStringKey, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(text).font(.system(size: 17, weight: .medium)).foregroundStyle(Theme.textPrimary)
+            Text(text).font(.system(size: 17, weight: .medium)).foregroundStyle(.white)
                 .frame(maxWidth: .infinity).frame(height: 52)
                 .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
