@@ -318,13 +318,16 @@ struct CardFace: View {
     var image: Image? = nil
     var placeholder: Bool = false
     private var height: CGFloat { width * 1.34 }
+    // Every metric scales with width, so a scaled-up face is pixel-identical to a
+    // natively larger one — the hero's scaleEffect never makes the text jump.
+    private var s: CGFloat { width / 230 }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             Group {
                 if let image { image.resizable().scaledToFill() }
                 else if placeholder {
-                    ZStack { Theme.surfaceStrong; Image(systemName: "photo").font(.system(size: 32)).foregroundStyle(Theme.textMuted) }
+                    ZStack { Theme.surfaceStrong; Image(systemName: "photo").font(.system(size: 32 * s)).foregroundStyle(Theme.textMuted) }
                 } else { Image("Sneaker").resizable().scaledToFill() }
             }
             .frame(width: width, height: height)
@@ -333,21 +336,21 @@ struct CardFace: View {
             LinearGradient(colors: [.clear, .clear, .black.opacity(0.6)], startPoint: .top, endPoint: .bottom)
 
             if let badge {
-                Text(LK(badge)).font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Theme.coral, in: Capsule()).padding(10)
+                Text(LK(badge)).font(.system(size: 12 * s, weight: .bold)).foregroundStyle(.white)
+                    .padding(.horizontal, 10 * s).padding(.vertical, 5 * s)
+                    .background(Theme.coral, in: Capsule()).padding(10 * s)
             }
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 3 * s) {
                 Spacer()
-                Text(LK(title)).font(.system(size: 18, weight: .bold)).foregroundStyle(.white).lineLimit(2)
-                Text(price).font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Text(LK(title)).font(.system(size: 18 * s, weight: .bold)).foregroundStyle(.white).lineLimit(2)
+                Text(price).font(.system(size: 20 * s, weight: .bold, design: .rounded)).foregroundStyle(.white)
             }
-            .padding(14)
+            .padding(14 * s)
         }
         .frame(width: width, height: height)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Theme.stroke, lineWidth: 0.6) }
+        .clipShape(RoundedRectangle(cornerRadius: 20 * s, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 20 * s, style: .continuous).stroke(Theme.stroke, lineWidth: 0.6) }
     }
 }
 
