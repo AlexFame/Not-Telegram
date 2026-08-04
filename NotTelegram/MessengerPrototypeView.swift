@@ -520,6 +520,7 @@ struct HeroExpandView: View {
             VStack(spacing: 16) {
                 Color.clear
                     .frame(width: targetW, height: targetH)
+                    .allowsHitTesting(false)
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { slotRect = $0 }
                 details
                     .frame(width: targetW)
@@ -533,7 +534,7 @@ struct HeroExpandView: View {
             CardFace(title: card.title, price: card.price, badge: "top", width: targetW)
                 .scaleEffect(expanded ? 1 : startScale, anchor: .center)
                 .position(expanded ? cardTarget : CGPoint(x: sourceRect.midX, y: sourceRect.midY))
-                .allowsHitTesting(false)
+                .onTapGesture { close() }
         }
         .ignoresSafeArea()
         .onChange(of: slotRect) { _, r in
