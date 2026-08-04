@@ -13,6 +13,7 @@ struct MessengerPrototypeView: View {
     @State private var appBackground: Image?
     @State private var storyCollapseProgress: CGFloat = 1
     @State private var storiesExpanded = false
+    @State private var showCreate = false
 
     var body: some View {
         NavigationStack {
@@ -47,6 +48,7 @@ struct MessengerPrototypeView: View {
                 .zIndex(100)
             }
         }
+        .sheet(isPresented: $showCreate) { CreateCardView() }
     }
 
     private var chats: some View {
@@ -55,10 +57,10 @@ struct MessengerPrototypeView: View {
                 HStack {
                     Text("Chats").font(.system(size: 34, weight: .bold, design: .rounded))
                     Spacer()
-                    Button(action: {}) {
-                        Image(systemName: "square.and.pencil").font(.system(size: 17, weight: .semibold))
+                    Button { showCreate = true } label: {
+                        Image(systemName: "plus").font(.system(size: 20, weight: .semibold))
                             .frame(width: 38, height: 38).background(Theme.surfaceStrong, in: Circle())
-                    }.accessibilityLabel("New message")
+                    }.accessibilityLabel("New product")
                 }
                 .foregroundStyle(Theme.textPrimary).padding(.horizontal, 20).padding(.top, 12)
 
@@ -316,15 +318,28 @@ struct ProductCard: View {
     var price: String = "€120"
     var badge: String? = "top"
     var width: CGFloat = 230
+    var image: Image? = nil
+    var placeholder: Bool = false
+    var interactive: Bool = true
+    @State private var showDeal = false
     private var height: CGFloat { width * 1.34 }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Image("Sneaker")
-                .resizable()
-                .scaledToFill()
-                .frame(width: width, height: height)
-                .clipped()
+            Group {
+                if let image {
+                    image.resizable().scaledToFill()
+                } else if placeholder {
+                    ZStack {
+                        Theme.surfaceStrong
+                        Image(systemName: "photo").font(.system(size: 32)).foregroundStyle(Theme.textMuted)
+                    }
+                } else {
+                    Image("Sneaker").resizable().scaledToFill()
+                }
+            }
+            .frame(width: width, height: height)
+            .clipped()
 
             LinearGradient(colors: [.clear, .clear, .black.opacity(0.6)],
                            startPoint: .top, endPoint: .bottom)
@@ -356,11 +371,202 @@ struct ProductCard: View {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(Theme.stroke, lineWidth: 0.6)
         }
+        .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .onTapGesture { if interactive { showDeal = true } }
+        .sheet(isPresented: $showDeal) { CardDealView(title: title, price: price, image: image) }
     }
 }
 
 struct EmbeddedCard: View {
     var body: some View { ProductCard() }
+}
+
+// Create a card in under a minute: photo → name → price → (description) →
+// publish. Live preview at the top updates as you type.
+struct CreateCardView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var price = ""
+    @State private var desc = ""
+    @State private var bargain = false
+    @State private var photoItem: PhotosPickerItem?
+    @State private var photo: Image?
+
+    private var canPublish: Bool { !name.isEmpty && !price.isEmpty }
+
+    var body: some View {
+        ZStack {
+            Theme.bg.ignoresSafeArea()
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 14) {
+                    ProductCard(title: name.isEmpty ? "Product name" : name,
+                                price: price.isEmpty ? "€—" : "€" + price,
+                                badge: nil, width: 200,
+                                image: photo, placeholder: photo == nil, interactive: false)
+                        .padding(.vertical, 8)
+
+                    PhotosPicker(selection: $photoItem, matching: .images) {
+                        row(icon: "photo", text: photo == nil ? "Add photo" : "Change photo")
+                    }
+                    field { TextField("Name", text: $name).textInputAutocapitalization(.sentences) }
+                    field { TextField("Price", text: $price).keyboardType(.numberPad) }
+                    field { TextField("Description (optional)", text: $desc, axis: .vertical).lineLimit(1...4) }
+
+                    Toggle(isOn: $bargain) {
+                        Text("Bargaining allowed").font(.system(size: 16)).foregroundStyle(Theme.textPrimary)
+                    }
+                    .tint(Theme.accent)
+                    .padding(.horizontal, 14).frame(minHeight: 52)
+                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+                    Button { dismiss() } label: {
+                        Text("Publish").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+                            .frame(maxWidth: .infinity).frame(height: 52)
+                            .background(Theme.accent, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                    .disabled(!canPublish).opacity(canPublish ? 1 : 0.5)
+                    .padding(.top, 4)
+                }
+                .padding(.horizontal, 20).padding(.bottom, 28)
+            }
+        }
+        .safeAreaInset(edge: .top) {
+            HStack {
+                Button { dismiss() } label: { Text("Cancel").font(.system(size: 17)).foregroundStyle(Theme.accent) }
+                Spacer()
+                Text("New product").font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.textPrimary)
+                Spacer()
+                Text("Cancel").font(.system(size: 17)).opacity(0)
+            }.padding(.horizontal, 16).padding(.vertical, 10).background(.ultraThinMaterial)
+        }
+        .task(id: photoItem) { photo = await loadImage(from: photoItem) }
+        .preferredColorScheme(.dark)
+    }
+
+    @ViewBuilder private func field<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        content()
+            .font(.system(size: 16)).foregroundStyle(Theme.textPrimary).tint(Theme.accent)
+            .padding(.horizontal, 14).frame(minHeight: 52)
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func row(icon: String, text: LocalizedStringKey) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+            Text(text)
+            Spacer()
+            Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.textMuted)
+        }
+        .font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.textPrimary)
+        .padding(.horizontal, 14).frame(height: 52)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+// The deal: Buy (at the seller's price) or offer your own. Both are one deal
+// with a different starting price; a decision opens a chat. Payment is a demo.
+struct CardDealView: View {
+    let title: String
+    let price: String
+    let image: Image?
+    @Environment(\.dismiss) private var dismiss
+    @State private var showPay = false
+    @State private var offering = false
+    @State private var offer = ""
+    @State private var result: String?
+
+    var body: some View {
+        ZStack {
+            Theme.bg.ignoresSafeArea()
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 18) {
+                    ProductCard(title: title, price: price, badge: "top", width: 230, image: image, interactive: false)
+                        .padding(.top, 8)
+
+                    if let result {
+                        VStack(spacing: 12) {
+                            Image(systemName: "checkmark.circle.fill").font(.system(size: 48)).foregroundStyle(Theme.online)
+                            Text(LK(result)).font(.system(size: 20, weight: .bold)).foregroundStyle(Theme.textPrimary)
+                            Text("No real money is charged").font(.system(size: 13)).foregroundStyle(Theme.textMuted)
+                        }.padding(.top, 8)
+                    } else if offering {
+                        VStack(spacing: 12) {
+                            TextField("Your price", text: $offer)
+                                .keyboardType(.numberPad).font(.system(size: 18)).foregroundStyle(Theme.textPrimary).tint(Theme.accent)
+                                .padding(.horizontal, 14).frame(height: 52)
+                                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            primary("Send offer") { withAnimation { result = "Offer sent" } }
+                                .disabled(offer.isEmpty).opacity(offer.isEmpty ? 0.5 : 1)
+                        }
+                    } else {
+                        VStack(spacing: 12) {
+                            primary("Buy") { showPay = true }
+                            secondary("Offer your price") { withAnimation { offering = true } }
+                        }
+                    }
+                }.padding(20)
+            }
+        }
+        .safeAreaInset(edge: .top) {
+            HStack {
+                Button { dismiss() } label: { Text("Cancel").font(.system(size: 17)).foregroundStyle(Theme.accent) }
+                Spacer()
+            }.padding(.horizontal, 16).padding(.vertical, 10).background(.ultraThinMaterial)
+        }
+        .sheet(isPresented: $showPay) {
+            DemoPaymentView(price: price) { withAnimation { result = "Paid" } }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private func primary(_ text: LocalizedStringKey, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(text).font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+                .frame(maxWidth: .infinity).frame(height: 52)
+                .background(Theme.accent, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+    }
+    private func secondary(_ text: LocalizedStringKey, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(text).font(.system(size: 17, weight: .medium)).foregroundStyle(Theme.textPrimary)
+                .frame(maxWidth: .infinity).frame(height: 52)
+                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+    }
+}
+
+// Simulated payment — clearly a demo: no real money, no card details.
+struct DemoPaymentView: View {
+    let price: String
+    let onPaid: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var processing = false
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Capsule().fill(Theme.stroke).frame(width: 40, height: 5).padding(.top, 10)
+            Text("Demo payment").font(.system(size: 18, weight: .bold)).foregroundStyle(Theme.textPrimary)
+            Text("No real money is charged").font(.system(size: 13)).foregroundStyle(Theme.textMuted)
+            Text(price).font(.system(size: 40, weight: .bold, design: .rounded)).foregroundStyle(Theme.textPrimary).padding(.vertical, 6)
+            Button {
+                processing = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { onPaid(); dismiss() }
+            } label: {
+                HStack(spacing: 8) {
+                    if processing { ProgressView().tint(.white) } else { Image(systemName: "faceid") }
+                    Text(processing ? "…" : "Pay")
+                }
+                .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+                .frame(maxWidth: .infinity).frame(height: 52)
+                .background(Theme.accent, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }.disabled(processing)
+            Spacer()
+        }
+        .padding(.horizontal, 20)
+        .presentationDetents([.height(300)])
+        .background(Theme.bg)
+        .preferredColorScheme(.dark)
+    }
 }
 
 struct SearchSurface: View {
