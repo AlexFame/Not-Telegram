@@ -318,16 +318,13 @@ struct CardFace: View {
     var image: Image? = nil
     var placeholder: Bool = false
     private var height: CGFloat { width * 1.34 }
-    // Every metric scales with width, so a scaled-up face is pixel-identical to a
-    // natively larger one — the hero's scaleEffect never makes the text jump.
-    private var s: CGFloat { width / 230 }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             Group {
                 if let image { image.resizable().scaledToFill() }
                 else if placeholder {
-                    ZStack { Theme.surfaceStrong; Image(systemName: "photo").font(.system(size: 32 * s)).foregroundStyle(Theme.textMuted) }
+                    ZStack { Theme.surfaceStrong; Image(systemName: "photo").font(.system(size: 32)).foregroundStyle(Theme.textMuted) }
                 } else { Image("Sneaker").resizable().scaledToFill() }
             }
             .frame(width: width, height: height)
@@ -336,21 +333,21 @@ struct CardFace: View {
             LinearGradient(colors: [.clear, .clear, .black.opacity(0.6)], startPoint: .top, endPoint: .bottom)
 
             if let badge {
-                Text(LK(badge)).font(.system(size: 12 * s, weight: .bold)).foregroundStyle(.white)
-                    .padding(.horizontal, 10 * s).padding(.vertical, 5 * s)
-                    .background(Theme.coral, in: Capsule()).padding(10 * s)
+                Text(LK(badge)).font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(Theme.coral, in: Capsule()).padding(10)
             }
 
-            VStack(alignment: .leading, spacing: 3 * s) {
+            VStack(alignment: .leading, spacing: 3) {
                 Spacer()
-                Text(LK(title)).font(.system(size: 18 * s, weight: .bold)).foregroundStyle(.white).lineLimit(2)
-                Text(price).font(.system(size: 20 * s, weight: .bold, design: .rounded)).foregroundStyle(.white)
+                Text(LK(title)).font(.system(size: 18, weight: .bold)).foregroundStyle(.white).lineLimit(2)
+                Text(price).font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(.white)
             }
-            .padding(14 * s)
+            .padding(14)
         }
         .frame(width: width, height: height)
-        .clipShape(RoundedRectangle(cornerRadius: 20 * s, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: 20 * s, style: .continuous).stroke(Theme.stroke, lineWidth: 0.6) }
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Theme.stroke, lineWidth: 0.6) }
     }
 }
 
@@ -503,7 +500,6 @@ struct HeroExpandView: View {
     private var screenW: CGFloat { UIScreen.main.bounds.width }
     private var targetW: CGFloat { min(screenW - 96, 300) }
     private var targetH: CGFloat { targetW * 1.34 }
-    private var startScale: CGFloat { sourceRect.width > 0 ? sourceRect.width / targetW : 0.6 }
     // Where the card and details naturally sit once expanded.
     private var cardTarget: CGPoint {
         slotRect == .zero ? CGPoint(x: screenW / 2, y: sourceRect.midY) : CGPoint(x: slotRect.midX, y: slotRect.midY)
@@ -534,8 +530,7 @@ struct HeroExpandView: View {
             .padding(.top, 40)
 
             // The single card — one continuous scale + translate.
-            CardFace(title: card.title, price: card.price, badge: "top", width: targetW)
-                .scaleEffect(expanded ? 1 : startScale, anchor: .center)
+            CardFace(title: card.title, price: card.price, badge: "top", width: expanded ? targetW : sourceRect.width)
                 .position(expanded ? cardTarget : CGPoint(x: sourceRect.midX, y: sourceRect.midY))
                 .onTapGesture { close() }
         }
