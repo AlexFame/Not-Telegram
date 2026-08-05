@@ -6,6 +6,18 @@ import UIKit
 // LK wraps a model-held string so it resolves through the string catalog.
 func LK(_ s: String) -> LocalizedStringKey { LocalizedStringKey(s) }
 
+// Keep the interactive swipe-back gesture on every pushed screen — SwiftUI
+// disables it when the back button is hidden (we use custom headers).
+extension UINavigationController: @retroactive UIGestureRecognizerDelegate {
+    override open func viewDidLoad() {
+        super.viewDidLoad()
+        interactivePopGestureRecognizer?.delegate = self
+    }
+    public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        viewControllers.count > 1
+    }
+}
+
 struct MessengerPrototypeView: View {
     @State private var tab: AppTab = .chats
     @State private var selectedStory: Story?
@@ -697,6 +709,7 @@ struct MasterProfileView: View {
     let service: Service
     @Environment(\.dismiss) private var dismiss
     @State private var showBooking = false
+    @State private var zoom: ZoomItem?
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -724,8 +737,8 @@ struct MasterProfileView: View {
 
                     section("Before / after")
                     HStack(spacing: 10) {
-                        beforeAfter("https://picsum.photos/seed/\(service.id)-before/300", "Before")
-                        beforeAfter("https://picsum.photos/seed/\(service.id)-after/300", "After")
+                        HeroPhoto(name: "Before", label: "Before") { zoom = ZoomItem(name: $0, rect: $1) }
+                        HeroPhoto(name: "After", label: "After") { zoom = ZoomItem(name: $0, rect: $1) }
                     }
 
                     section("Reviews")
@@ -735,7 +748,7 @@ struct MasterProfileView: View {
                     section("Service")
                     ServiceTile(service: service).frame(width: 190)
                 }
-                .padding(20).padding(.bottom, 110)
+                .padding(20).padding(.bottom, 140)
             }
 
             Button { showBooking = true } label: {
@@ -743,7 +756,9 @@ struct MasterProfileView: View {
                     .frame(maxWidth: .infinity).frame(height: 54)
                     .background(Theme.accent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
-            .padding(.horizontal, 20).padding(.bottom, 18)
+            .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 18)
+            .frame(maxWidth: .infinity)
+            .background(LinearGradient(colors: [.clear, Theme.bg, Theme.bg], startPoint: .top, endPoint: .bottom))
         }
         .toolbar(.hidden, for: .navigationBar)
         .navigationBarBackButtonHidden(true)
@@ -756,19 +771,68 @@ struct MasterProfileView: View {
             }.padding(.horizontal, 14).padding(.vertical, 9).background(.ultraThinMaterial)
         }
         .sheet(isPresented: $showBooking) { BookingView(service: service) }
+        .overlay {
+            if let zoom {
+                HeroImageView(name: zoom.name, sourceRect: zoom.rect) { self.zoom = nil }
+                    .zIndex(60)
+            }
+        }
     }
 
     private func section(_ t: LocalizedStringKey) -> some View {
         Text(t).font(.system(size: 18, weight: .bold)).foregroundStyle(Theme.textPrimary)
     }
-    private func beforeAfter(_ url: String, _ label: LocalizedStringKey) -> some View {
-        AsyncImage(url: URL(string: url)) { $0.resizable().scaledToFill() } placeholder: { Theme.surfaceStrong }
-            .frame(height: 130).frame(maxWidth: .infinity).clipped()
+}
+
+struct ZoomItem: Identifiable { let id = UUID(); let name: String; let rect: CGRect }
+
+// A photo that expands full-screen on tap and shrinks back on another tap —
+// the same grow/shrink feel as the product card.
+struct HeroPhoto: View {
+    let name: String
+    let label: LocalizedStringKey
+    let onTap: (String, CGRect) -> Void
+    @State private var frame: CGRect = .zero
+    var body: some View {
+        Image(name).resizable().scaledToFill()
+            .frame(height: 160).frame(maxWidth: .infinity).clipped()
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(alignment: .topLeading) {
                 Text(label).font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
                     .padding(.horizontal, 8).padding(.vertical, 4).background(.black.opacity(0.55), in: Capsule()).padding(8)
             }
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .onTapGesture { onTap(name, frame) }
+    }
+}
+
+struct HeroImageView: View {
+    let name: String
+    let sourceRect: CGRect
+    let onClose: () -> Void
+    @State private var expanded = false
+    private var screenW: CGFloat { UIScreen.main.bounds.width }
+    private var screenH: CGFloat { UIScreen.main.bounds.height }
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(expanded ? 0.95 : 0).ignoresSafeArea().onTapGesture { close() }
+            Image(name).resizable().scaledToFit()
+                .frame(width: expanded ? screenW - 24 : sourceRect.width,
+                       height: expanded ? screenH * 0.82 : sourceRect.height)
+                .clipShape(RoundedRectangle(cornerRadius: expanded ? 18 : 14, style: .continuous))
+                .position(expanded ? CGPoint(x: screenW / 2, y: screenH / 2)
+                                   : CGPoint(x: sourceRect.midX, y: sourceRect.midY))
+                .onTapGesture { close() }
+        }
+        .ignoresSafeArea()
+        .onAppear { withAnimation(.spring(response: 0.42, dampingFraction: 0.84)) { expanded = true } }
+    }
+
+    private func close() {
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.86)) { expanded = false }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) { onClose() }
     }
 }
 
@@ -851,10 +915,10 @@ struct Service: Identifiable, Hashable {
 
 enum SampleServices {
     static let all = [
-        Service(id: "m1", name: "Relaxing massage", master: "Olena", price: "€40", rating: "4.9", reviews: 214, city: "Kyiv", photo: "https://picsum.photos/seed/massage1/400", avatar: "https://i.pravatar.cc/200?img=32"),
-        Service(id: "m2", name: "Deep tissue massage", master: "Andrii", price: "€55", rating: "4.8", reviews: 156, city: "Kyiv", photo: "https://picsum.photos/seed/massage2/400", avatar: "https://i.pravatar.cc/200?img=52"),
-        Service(id: "m3", name: "Sports massage", master: "Dmytro", price: "€50", rating: "5.0", reviews: 98, city: "Kyiv", photo: "https://picsum.photos/seed/massage3/400", avatar: "https://i.pravatar.cc/200?img=13"),
-        Service(id: "m4", name: "Aroma massage", master: "Iryna", price: "€45", rating: "4.9", reviews: 187, city: "Kyiv", photo: "https://picsum.photos/seed/massage4/400", avatar: "https://i.pravatar.cc/200?img=20")
+        Service(id: "b1", name: "Men's haircut", master: "Andrii", price: "€25", rating: "4.9", reviews: 214, city: "Kyiv", photo: "https://i.pravatar.cc/400?img=60", avatar: "https://i.pravatar.cc/200?img=12"),
+        Service(id: "b2", name: "Haircut + beard", master: "Dmytro", price: "€35", rating: "5.0", reviews: 168, city: "Kyiv", photo: "https://i.pravatar.cc/400?img=65", avatar: "https://i.pravatar.cc/200?img=13"),
+        Service(id: "b3", name: "Beard trim", master: "Oleh", price: "€15", rating: "4.8", reviews: 132, city: "Kyiv", photo: "https://i.pravatar.cc/400?img=33", avatar: "https://i.pravatar.cc/200?img=52"),
+        Service(id: "b4", name: "Kids haircut", master: "Vlad", price: "€18", rating: "4.9", reviews: 96, city: "Kyiv", photo: "https://i.pravatar.cc/400?img=15", avatar: "https://i.pravatar.cc/200?img=8")
     ]
 }
 

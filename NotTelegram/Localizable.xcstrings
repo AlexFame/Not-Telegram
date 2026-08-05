@@ -1,6 +1,24 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Men's haircut" : {
+      "localizations" : { "uk" : { "stringUnit" : { "state" : "translated", "value" : "Чоловіча стрижка" } } }
+    },
+    "Haircut + beard" : {
+      "localizations" : { "uk" : { "stringUnit" : { "state" : "translated", "value" : "Стрижка + борода" } } }
+    },
+    "Beard trim" : {
+      "localizations" : { "uk" : { "stringUnit" : { "state" : "translated", "value" : "Корекція бороди" } } }
+    },
+    "Kids haircut" : {
+      "localizations" : { "uk" : { "stringUnit" : { "state" : "translated", "value" : "Дитяча стрижка" } } }
+    },
+    "Oleh" : {
+      "localizations" : { "uk" : { "stringUnit" : { "state" : "translated", "value" : "Олег" } } }
+    },
+    "Vlad" : {
+      "localizations" : { "uk" : { "stringUnit" : { "state" : "translated", "value" : "Влад" } } }
+    },
     "People, products, services" : {
       "localizations" : { "uk" : { "stringUnit" : { "state" : "translated", "value" : "Люди, товари, послуги" } } }
     },
