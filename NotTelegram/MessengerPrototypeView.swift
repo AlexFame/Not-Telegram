@@ -75,9 +75,6 @@ struct MessengerPrototypeView: View {
         .onScrollGeometryChange(for: CGFloat.self, of: { geometry in
             geometry.contentOffset.y + geometry.contentInsets.top
         }) { _, offset in
-            // Telegram-style: small by default. Pull the list DOWN and the stories
-            // grow continuously with the finger; pull far enough and they LATCH
-            // open (stay expanded). Scroll up to collapse them again.
             if storiesExpanded {
                 if offset > 40 {
                     withAnimation(.spring(response: 0.36, dampingFraction: 0.86)) {
@@ -627,50 +624,238 @@ struct DemoPaymentView: View {
     }
 }
 
+// Search tab — opens with the keyboard already up (like Telegram): type an
+// intent ("massage") and the market surfaces right here. Discovery is pull.
 struct SearchSurface: View {
-    let dismiss: () -> Void = {}
     @State private var query = ""
-    @FocusState private var searchFieldFocused: Bool
+    @FocusState private var focused: Bool
+    private let columns = [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)]
+
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 9) {
-                    Button(action: dismiss) { Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold)) }
                     Image(systemName: "magnifyingglass")
-                    TextField("People, channels, messages, cards", text: $query)
-                        .textInputAutocapitalization(.never)
-                        .focused($searchFieldFocused)
-                        .submitLabel(.search)
-                        .foregroundStyle(Theme.textPrimary)
+                    TextField("People, products, services", text: $query)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .focused($focused).submitLabel(.search).foregroundStyle(Theme.textPrimary)
+                    if !query.isEmpty {
+                        Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }.foregroundStyle(Theme.textMuted)
+                    }
                 }
                 .foregroundStyle(Theme.textMuted).padding(.horizontal, 14).frame(height: 48)
                 .background(Theme.surfaceStrong, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-                if !query.isEmpty {
-                    Text("Results").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.textMuted).textCase(.uppercase).padding(.top, 8)
-                    SearchResultRow(icon: "person.crop.circle.fill", title: query, detail: "Person")
-                    SearchResultRow(icon: "rectangle.stack.fill", title: "Card «\(query)»", detail: "Found in channels and chats")
+                if query.isEmpty {
+                    Text("Search people, products and services — and find them near you.")
+                        .font(.system(size: 14)).foregroundStyle(Theme.textMuted).padding(.top, 4)
+                } else {
+                    Text("Near you").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.textMuted).textCase(.uppercase)
+                    LazyVGrid(columns: columns, spacing: 14) {
+                        ForEach(SampleServices.all) { s in
+                            NavigationLink { MasterProfileView(service: s) } label: { ServiceTile(service: s) }
+                                .buttonStyle(.plain)
+                        }
+                    }
                 }
             }
             .foregroundStyle(Theme.textPrimary).padding(.horizontal, 20).padding(.top, 12)
         }
         .background(Theme.bg.ignoresSafeArea())
         .scrollDismissesKeyboard(.interactively)
-        .task {
-            searchFieldFocused = true
-        }
+        .task { focused = true }
     }
 }
 
-struct SearchResultRow: View {
-    let icon: String; let title: String; let detail: String
+struct ServiceTile: View {
+    let service: Service
     var body: some View {
-        HStack(spacing: 13) {
-            Image(systemName: icon).font(.system(size: 18, weight: .semibold)).foregroundStyle(Theme.accent).frame(width: 42, height: 42).background(Theme.surfaceStrong, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            VStack(alignment: .leading, spacing: 3) { Text(LK(title)).font(.system(size: 16, weight: .semibold)); Text(LK(detail)).font(.system(size: 13)).foregroundStyle(Theme.textSecondary) }
-            Spacer(); Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.textMuted)
-        }.padding(.vertical, 6)
+        VStack(alignment: .leading, spacing: 0) {
+            AsyncImage(url: URL(string: service.photo)) { $0.resizable().scaledToFill() } placeholder: { Theme.surfaceStrong }
+                .frame(height: 140).frame(maxWidth: .infinity).clipped()
+            VStack(alignment: .leading, spacing: 5) {
+                Text(LK(service.name)).font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.textPrimary).lineLimit(1)
+                HStack(spacing: 5) {
+                    Avatar(size: 18, url: service.avatar)
+                    Text(LK(service.master)).font(.system(size: 12)).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                    Spacer(minLength: 2)
+                    Image(systemName: "star.fill").font(.system(size: 10)).foregroundStyle(.yellow)
+                    Text(service.rating).font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.textPrimary)
+                }
+                Text(service.price).font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(Theme.textPrimary)
+            }.padding(10)
+        }
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Theme.stroke, lineWidth: 0.6) }
     }
+}
+
+// The master's profile — the vitrina a search leads to: who they are, proof
+// (before/after, reviews), and one clear action: book.
+struct MasterProfileView: View {
+    let service: Service
+    @Environment(\.dismiss) private var dismiss
+    @State private var showBooking = false
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            Theme.bg.ignoresSafeArea()
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 20) {
+                    HStack(spacing: 13) {
+                        Avatar(size: 66, url: service.avatar)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(LK(service.master)).font(.system(size: 22, weight: .bold, design: .rounded)).foregroundStyle(Theme.textPrimary)
+                            HStack(spacing: 5) {
+                                Image(systemName: "star.fill").font(.system(size: 12)).foregroundStyle(.yellow)
+                                Text(service.rating).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.textPrimary)
+                                Text("·").foregroundStyle(Theme.textMuted)
+                                Text("\(service.reviews)").font(.system(size: 13)).foregroundStyle(Theme.textSecondary)
+                                Text("reviews").font(.system(size: 13)).foregroundStyle(Theme.textSecondary)
+                            }
+                            HStack(spacing: 4) {
+                                Image(systemName: "mappin.and.ellipse").font(.system(size: 12)).foregroundStyle(Theme.textMuted)
+                                Text(LK(service.city)).font(.system(size: 13)).foregroundStyle(Theme.textMuted)
+                            }
+                        }
+                        Spacer()
+                    }
+
+                    section("Before / after")
+                    HStack(spacing: 10) {
+                        beforeAfter("https://picsum.photos/seed/\(service.id)-before/300", "Before")
+                        beforeAfter("https://picsum.photos/seed/\(service.id)-after/300", "After")
+                    }
+
+                    section("Reviews")
+                    ReviewRow(name: "Kateryna", avatar: "https://i.pravatar.cc/150?img=45", text: "Amazing hands, felt brand new after. Highly recommend!")
+                    ReviewRow(name: "Pavlo", avatar: "https://i.pravatar.cc/150?img=8", text: "On time, very professional. Booking took ten seconds.")
+
+                    section("Service")
+                    ServiceTile(service: service).frame(width: 190)
+                }
+                .padding(20).padding(.bottom, 110)
+            }
+
+            Button { showBooking = true } label: {
+                Text("Book").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+                    .frame(maxWidth: .infinity).frame(height: 54)
+                    .background(Theme.accent, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .padding(.horizontal, 20).padding(.bottom, 18)
+        }
+        .toolbar(.hidden, for: .navigationBar)
+        .navigationBarBackButtonHidden(true)
+        .safeAreaInset(edge: .top) {
+            HStack {
+                Button { dismiss() } label: {
+                    HStack(spacing: 2) { Image(systemName: "chevron.left").font(.system(size: 18, weight: .semibold)); Text("Back").font(.system(size: 17)) }.foregroundStyle(Theme.accent)
+                }
+                Spacer()
+            }.padding(.horizontal, 14).padding(.vertical, 9).background(.ultraThinMaterial)
+        }
+        .sheet(isPresented: $showBooking) { BookingView(service: service) }
+    }
+
+    private func section(_ t: LocalizedStringKey) -> some View {
+        Text(t).font(.system(size: 18, weight: .bold)).foregroundStyle(Theme.textPrimary)
+    }
+    private func beforeAfter(_ url: String, _ label: LocalizedStringKey) -> some View {
+        AsyncImage(url: URL(string: url)) { $0.resizable().scaledToFill() } placeholder: { Theme.surfaceStrong }
+            .frame(height: 130).frame(maxWidth: .infinity).clipped()
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(alignment: .topLeading) {
+                Text(label).font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 4).background(.black.opacity(0.55), in: Capsule()).padding(8)
+            }
+    }
+}
+
+struct ReviewRow: View {
+    let name: String; let avatar: String; let text: String
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Avatar(size: 36, url: avatar)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 5) {
+                    Text(LK(name)).font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.textPrimary)
+                    HStack(spacing: 1) { ForEach(0..<5, id: \.self) { _ in Image(systemName: "star.fill").font(.system(size: 9)).foregroundStyle(.yellow) } }
+                }
+                Text(LK(text)).font(.system(size: 14)).foregroundStyle(Theme.textSecondary).fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12).background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+// Booking = the deal for a service. Pick a free slot → booked (demo, no money).
+struct BookingView: View {
+    let service: Service
+    @Environment(\.dismiss) private var dismiss
+    @State private var slot: String?
+    @State private var done = false
+    private let slots = ["Today 15:00", "Today 17:30", "Tomorrow 11:00", "Tomorrow 14:00"]
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Capsule().fill(Theme.stroke).frame(width: 40, height: 5).padding(.top, 10)
+            if done {
+                VStack(spacing: 10) {
+                    Image(systemName: "checkmark.circle.fill").font(.system(size: 48)).foregroundStyle(Theme.online)
+                    Text("Booked").font(.system(size: 22, weight: .bold)).foregroundStyle(Theme.textPrimary)
+                    HStack(spacing: 5) {
+                        Text(LK(service.name)).foregroundStyle(Theme.textSecondary)
+                        Text("·").foregroundStyle(Theme.textMuted)
+                        if let slot { Text(LK(slot)).foregroundStyle(Theme.textSecondary) }
+                    }.font(.system(size: 14))
+                }.padding(.top, 18)
+            } else {
+                Text("Choose a time").font(.system(size: 18, weight: .bold)).foregroundStyle(Theme.textPrimary)
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                    ForEach(slots, id: \.self) { s in
+                        Button { slot = s } label: {
+                            Text(LK(s)).font(.system(size: 15, weight: .medium)).foregroundStyle(slot == s ? .white : Theme.textPrimary)
+                                .frame(maxWidth: .infinity).frame(height: 48)
+                                .background(slot == s ? Theme.accent : Theme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        }.buttonStyle(.plain)
+                    }
+                }
+                Button { withAnimation { done = true } } label: {
+                    Text("Book").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white)
+                        .frame(maxWidth: .infinity).frame(height: 52)
+                        .background(Theme.accent, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }.disabled(slot == nil).opacity(slot == nil ? 0.5 : 1)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 20)
+        .presentationDetents([.height(done ? 240 : 320)])
+        .background(Theme.bg)
+        .preferredColorScheme(.dark)
+    }
+}
+
+struct Service: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let master: String
+    let price: String
+    let rating: String
+    let reviews: Int
+    let city: String
+    let photo: String
+    let avatar: String
+}
+
+enum SampleServices {
+    static let all = [
+        Service(id: "m1", name: "Relaxing massage", master: "Olena", price: "€40", rating: "4.9", reviews: 214, city: "Kyiv", photo: "https://picsum.photos/seed/massage1/400", avatar: "https://i.pravatar.cc/200?img=32"),
+        Service(id: "m2", name: "Deep tissue massage", master: "Andrii", price: "€55", rating: "4.8", reviews: 156, city: "Kyiv", photo: "https://picsum.photos/seed/massage2/400", avatar: "https://i.pravatar.cc/200?img=52"),
+        Service(id: "m3", name: "Sports massage", master: "Dmytro", price: "€50", rating: "5.0", reviews: 98, city: "Kyiv", photo: "https://picsum.photos/seed/massage3/400", avatar: "https://i.pravatar.cc/200?img=13"),
+        Service(id: "m4", name: "Aroma massage", master: "Iryna", price: "€45", rating: "4.9", reviews: 187, city: "Kyiv", photo: "https://picsum.photos/seed/massage4/400", avatar: "https://i.pravatar.cc/200?img=20")
+    ]
 }
 
 struct ChannelsSurface: View {
